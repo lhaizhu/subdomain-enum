@@ -10,6 +10,7 @@ import socket
 import string
 import sys
 import requests
+import os
 from tqdm import tqdm
 from colorama import init, Fore, Style
 
@@ -280,6 +281,11 @@ class SubdomainEnumerator:
     def save_results(self):
         """保存结果到输出文件"""
         try:
+            # 如果输出目录不存在，创建它
+            output_dir = os.path.dirname(self.output_file)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                
             with open(self.output_file, 'w') as f:
                 for domain, ips in sorted(self.results):
                     f.write(f"{domain} -> {ips}\n")
@@ -296,12 +302,29 @@ class SubdomainEnumerator:
         print("-" * 60)
 
 
+def load_domains_from_file(file_path):
+    """从文件加载域名列表"""
+    try:
+        with open(file_path, 'r') as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except Exception as e:
+        print(f"{Fore.RED}[-] {Style.RESET_ALL}加载域名文件失败: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="子域名枚举工具（带泛解析检测）")
-    parser.add_argument("-d", "--domain", required=True, help="目标域名")
+    
+    # 域名相关参数组
+    domain_group = parser.add_mutually_exclusive_group(required=True)
+    domain_group.add_argument("-d", "--domain", help="目标域名")
+    domain_group.add_argument("-df", "--domain-file", help="包含多个域名的文件路径，每行一个域名")
+    
+    # 其他参数
     parser.add_argument("-w", "--wordlist", required=True, help="字典文件路径")
     parser.add_argument("-t", "--threads", type=int, default=10, help="线程数 (默认: 10)")
     parser.add_argument("-o", "--output", help="输出文件路径")
+    parser.add_argument("-od", "--output-dir", help="输出目录路径（用于多域名模式）")
     parser.add_argument("--timeout", type=int, default=5, help="DNS解析超时时间(秒) (默认: 5)")
     parser.add_argument("-v", "--verbose", action="store_true", help="启用详细输出")
     parser.add_argument("--http-verify", action="store_true", help="使用HTTP响应特征验证泛解析")
@@ -315,21 +338,63 @@ def main():
     except ImportError:
         pass
     
-    enumerator = SubdomainEnumerator(
-        domain=args.domain,
-        wordlist=args.wordlist,
-        threads=args.threads,
-        timeout=args.timeout,
-        output=args.output,
-        verbose=args.verbose,
-        http_verify=args.http_verify
-    )
+    # 处理单个域名
+    if args.domain:
+        enumerator = SubdomainEnumerator(
+            domain=args.domain,
+            wordlist=args.wordlist,
+            threads=args.threads,
+            timeout=args.timeout,
+            output=args.output,
+            verbose=args.verbose,
+            http_verify=args.http_verify
+        )
+        
+        try:
+            enumerator.enumerate()
+        except KeyboardInterrupt:
+            print("\n" + Fore.YELLOW + "[!] 用户中断了枚举" + Style.RESET_ALL)
+            sys.exit(0)
     
-    try:
-        enumerator.enumerate()
-    except KeyboardInterrupt:
-        print("\n" + Fore.YELLOW + "[!] 用户中断了枚举" + Style.RESET_ALL)
-        sys.exit(0)
+    # 处理多个域名
+    elif args.domain_file:
+        domains = load_domains_from_file(args.domain_file)
+        print(f"{Fore.BLUE}[+] {Style.RESET_ALL}从文件加载了 {len(domains)} 个域名")
+        
+        for i, domain in enumerate(domains):
+            print(f"\n{Fore.BLUE}[+] {Style.RESET_ALL}处理域名 {i+1}/{len(domains)}: {domain}")
+            
+            # 为每个域名设置输出文件
+            output_file = None
+            if args.output_dir:
+                # 确保输出目录存在
+                if not os.path.exists(args.output_dir):
+                    os.makedirs(args.output_dir)
+                output_file = os.path.join(args.output_dir, f"{domain}.txt")
+            elif args.output:
+                # 如果提供了单个输出文件，将所有结果附加到同一个文件
+                output_file = args.output
+            
+            enumerator = SubdomainEnumerator(
+                domain=domain,
+                wordlist=args.wordlist,
+                threads=args.threads,
+                timeout=args.timeout,
+                output=output_file,
+                verbose=args.verbose,
+                http_verify=args.http_verify
+            )
+            
+            try:
+                enumerator.enumerate()
+            except KeyboardInterrupt:
+                print("\n" + Fore.YELLOW + "[!] 用户中断了枚举" + Style.RESET_ALL)
+                choice = input("是否继续下一个域名? (y/n): ").lower()
+                if choice != 'y':
+                    sys.exit(0)
+            except Exception as e:
+                print(f"{Fore.RED}[-] {Style.RESET_ALL}处理域名 {domain} 时出错: {e}")
+                continue
 
 
 if __name__ == "__main__":
