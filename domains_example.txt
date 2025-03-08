@@ -1,0 +1,22 @@
+# 这是一个域名文件示例，用于批量枚举子域名
+# 每行一个域名，以#开头的行将被忽略（作为注释）
+
+# 常见域名示例
+example.com
+example.org
+example.net
+
+# 科技公司域名
+# google.com
+# microsoft.com
+# apple.com
+
+# 社交媒体域名
+# facebook.com
+# twitter.com
+# instagram.com
+
+# 电子商务域名
+# amazon.com
+# alibaba.com
+# ebay.com 
